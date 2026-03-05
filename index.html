@@ -26,8 +26,47 @@
     </aside>
 
     <main id="main-content">
+        <!-- QUICK GO TO NAV -->
+        <nav class="quick-nav"
+            style="background-color: var(--bg-secondary); border-bottom: 1px solid var(--border-color); padding: var(--spacing-sm) var(--spacing-lg); display: flex; align-items: center; justify-content: space-between;">
+            <div
+                style="font-size: 0.875rem; color: var(--text-secondary); white-space: nowrap; margin-right: 16px; font-weight: bold;">
+                Quick Go To:</div>
+
+            <!-- Desktop Buttons -->
+            <div class="quick-nav-buttons" style="display: flex; gap: 8px; flex-wrap: wrap; flex-grow: 1;">
+                <button class="btn btn-secondary nav-btn active" data-target="dashboard"
+                    style="padding: 4px 12px; font-size: 0.875rem;">Dashboard</button>
+                <button class="btn btn-secondary nav-btn" data-target="checkout"
+                    style="padding: 4px 12px; font-size: 0.875rem;">Checkout</button>
+                <button class="btn btn-secondary nav-btn" data-target="products"
+                    style="padding: 4px 12px; font-size: 0.875rem;">Products</button>
+                <button class="btn btn-secondary nav-btn" data-target="suppliers"
+                    style="padding: 4px 12px; font-size: 0.875rem;">Suppliers</button>
+                <button class="btn btn-secondary nav-btn" data-target="reports"
+                    style="padding: 4px 12px; font-size: 0.875rem;">Reports</button>
+                <button class="btn btn-secondary nav-btn" data-target="settings"
+                    style="padding: 4px 12px; font-size: 0.875rem;">Settings</button>
+            </div>
+
+            <!-- Mobile Select -->
+            <select id="quick-nav-select" class="quick-nav-select"
+                style="display: none; width: 100%; max-width: 200px;">
+                <option value="dashboard">Dashboard</option>
+                <option value="checkout">Checkout (POS)</option>
+                <option value="products">Products</option>
+                <option value="suppliers">Suppliers</option>
+                <option value="reports">Reports</option>
+                <option value="settings">Settings</option>
+            </select>
+        </nav>
+
         <header class="header">
-            <h2 id="current-view-title">Dashboard</h2>
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <button id="btn-back" class="btn btn-secondary"
+                    style="display: none; padding: 4px 12px; font-size: 14px; border-radius: 20px;">&larr; Back</button>
+                <h2 id="current-view-title" style="margin-bottom: 0;">Dashboard</h2>
+            </div>
             <div id="header-actions"></div>
         </header>
 

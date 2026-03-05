@@ -18,33 +18,112 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- NAVIGATION ---
 function initNavigation() {
-    const navLinks = document.querySelectorAll('.nav-link');
+    const navLinks = document.querySelectorAll('.nav-link, .nav-btn');
+
+    // Handle click on links and buttons
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
             const target = link.dataset.target;
-
-            navLinks.forEach(n => n.classList.remove('active'));
-            link.classList.add('active');
-
-            document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
-            document.getElementById(`view-${target}`).classList.add('active');
-            document.getElementById('current-view-title').textContent = link.textContent;
-
-            if (window.innerWidth <= 768) {
-                document.getElementById('sidebar').style.display = 'none'; // Basic auto hide on mobile
-            }
-
-            // Trigger specific view renders
-            if (target === 'dashboard') renderDashboard();
-            if (target === 'products') renderProducts();
-            if (target === 'suppliers') renderSuppliers();
-            if (target === 'checkout') renderPOSProducts();
-            if (target === 'reports') renderReports();
+            navigateTo(target, true);
         });
     });
 
-    // Mobile navigation toggle logic could be added here
+    // Handle mobile select
+    const quickNavSelect = document.getElementById('quick-nav-select');
+    if (quickNavSelect) {
+        quickNavSelect.addEventListener('change', (e) => {
+            navigateTo(e.target.value, true);
+        });
+    }
+
+    // Handle back button
+    const backBtn = document.getElementById('btn-back');
+    if (backBtn) {
+        backBtn.addEventListener('click', () => {
+            window.history.back();
+        });
+    }
+
+    // Handle popstate for browser history navigation
+    window.addEventListener('popstate', (e) => {
+        if (e.state && e.state.target) {
+            navigateTo(e.state.target, false);
+        } else {
+            navigateTo('dashboard', false);
+        }
+    });
+
+    // Setup initial history state based on hash or default
+    let initialTarget = 'dashboard';
+    if (window.location.hash) {
+        const hashTarget = window.location.hash.substring(1);
+        if (['dashboard', 'checkout', 'products', 'suppliers', 'reports', 'settings'].includes(hashTarget)) {
+            initialTarget = hashTarget;
+        }
+    }
+    window.history.replaceState({ target: initialTarget }, initialTarget, `#${initialTarget}`);
+
+    // In case we loaded with a hash, navigate to it once immediately
+    if (initialTarget !== 'dashboard') {
+        navigateTo(initialTarget, false);
+    }
+}
+
+function navigateTo(target, pushToHistory = true) {
+    // Determine title text
+    let titleText = target.charAt(0).toUpperCase() + target.slice(1);
+    const link = Array.from(document.querySelectorAll('.nav-link')).find(n => n.dataset.target === target);
+    if (link) titleText = link.textContent;
+
+    // Update active states for sidebar and quick nav buttons
+    document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+    if (link) link.classList.add('active');
+
+    document.querySelectorAll('.nav-btn').forEach(n => n.classList.remove('active'));
+    const topBtn = Array.from(document.querySelectorAll('.nav-btn')).find(n => n.dataset.target === target);
+    if (topBtn) topBtn.classList.add('active');
+
+    // Update select dropdown
+    const quickNavSelect = document.getElementById('quick-nav-select');
+    if (quickNavSelect) quickNavSelect.value = target;
+
+    // Update Views
+    document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+    const view = document.getElementById(`view-${target}`);
+    if (view) view.classList.add('active');
+
+    // Update Header and Back button
+    document.getElementById('current-view-title').textContent = titleText;
+    const backBtn = document.getElementById('btn-back');
+    if (backBtn) {
+        if (target === 'dashboard') {
+            backBtn.style.display = 'none';
+        } else {
+            backBtn.style.display = 'block';
+        }
+    }
+
+    // Hide sidebar on mobile
+    if (window.innerWidth <= 768) {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar && sidebar.style.display !== 'none' && !sidebar.dataset.initialized) {
+            sidebar.style.display = 'none';
+            sidebar.dataset.initialized = 'true';
+        }
+    }
+
+    // History API
+    if (pushToHistory) {
+        window.history.pushState({ target }, titleText, `#${target}`);
+    }
+
+    // Trigger specific view renders
+    if (target === 'dashboard') renderDashboard();
+    if (target === 'products') renderProducts();
+    if (target === 'suppliers') renderSuppliers();
+    if (target === 'checkout') renderPOSProducts();
+    if (target === 'reports') renderReports();
 }
 
 // --- CURRENCY FORMATTER ---
