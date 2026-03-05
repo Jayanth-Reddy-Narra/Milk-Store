@@ -1,7 +1,7 @@
 // Supabase Setup
 // REPLACE THESE with your actual Supabase project URL and anon key
-const SUPABASE_URL = "YOUR_SUPABASE_URL";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+const SUPABASE_URL = "https://jrvyzzikpfaohjkypvmz.supabase.co";
+const SUPABASE_ANON_KEY = "Narras6-288/3/c";
 
 let supabase;
 if (typeof supabase !== 'undefined') {
