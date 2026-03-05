@@ -3,12 +3,7 @@
 const SUPABASE_URL = "https://jrvyzzikpfaohjkypvmz.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_I9NalIe1-cp_-G_ZszMhLg_AO66KUwI";
 
-let supabase;
-if (typeof supabase !== 'undefined') {
-    // If Supabase is loaded globally via CDN
-} else if (window.supabase) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-}
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // State
 let session = null;
@@ -25,14 +20,14 @@ let appSettings = {
 const DB = {
     // ---- AUTH ----
     initAuth: async () => {
-        if (!supabase) return false;
-        const { data, error } = await supabase.auth.getSession();
+        if (!supabaseClient) return false;
+        const { data, error } = await supabaseClient.auth.getSession();
         session = data.session;
         if (session) {
             await DB.fetchProfile(session.user.id);
         }
 
-        supabase.auth.onAuthStateChange(async (event, currentSession) => {
+        supabaseClient.auth.onAuthStateChange(async (event, currentSession) => {
             session = currentSession;
             if (session) {
                 await DB.fetchProfile(session.user.id);
@@ -43,13 +38,13 @@ const DB = {
         return session;
     },
     login: async (email, password) => {
-        return await supabase.auth.signInWithPassword({ email, password });
+        return await supabaseClient.auth.signInWithPassword({ email, password });
     },
     logout: async () => {
-        await supabase.auth.signOut();
+        await supabaseClient.auth.signOut();
     },
     fetchProfile: async (userId) => {
-        const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+        const { data, error } = await supabaseClient.from('profiles').select('*').eq('id', userId).single();
         if (data) currentUserProfile = data;
         return data;
     },
@@ -64,7 +59,7 @@ const DB = {
 
     // ---- PRODUCTS ----
     getProducts: async () => {
-        const { data, error } = await supabase.from('products').select('*').order('name');
+        const { data, error } = await supabaseClient.from('products').select('*').order('name');
         return error ? [] : (data || []).map(p => ({
             ...p,
             costPrice: parseFloat(p.cost_price),
@@ -75,7 +70,7 @@ const DB = {
         }));
     },
     getProduct: async (id) => {
-        const { data, error } = await supabase.from('products').select('*').eq('id', id).single();
+        const { data, error } = await supabaseClient.from('products').select('*').eq('id', id).single();
         if (error || !data) return null;
         return {
             ...data,
@@ -97,7 +92,7 @@ const DB = {
             low_stock_threshold: product.lowStockThreshold,
             supplier_id: product.supplierId
         };
-        const { data, error } = await supabase.from('products').insert([payload]).select().single();
+        const { data, error } = await supabaseClient.from('products').insert([payload]).select().single();
         return error ? null : data;
     },
     updateProduct: async (id, updates) => {
@@ -112,11 +107,11 @@ const DB = {
         if (updates.supplierId !== undefined) payload.supplier_id = updates.supplierId;
         payload.updated_at = new Date().toISOString();
 
-        const { error } = await supabase.from('products').update(payload).eq('id', id);
+        const { error } = await supabaseClient.from('products').update(payload).eq('id', id);
         return !error;
     },
     deleteProduct: async (id) => {
-        await supabase.from('products').delete().eq('id', id);
+        await supabaseClient.from('products').delete().eq('id', id);
     },
     adjustStock: async (id, qtyChange) => {
         // Safe atomic RPC or just basic select/update since we run POS locally
@@ -130,7 +125,7 @@ const DB = {
 
     // ---- SALES ----
     getSales: async () => {
-        const { data, error } = await supabase.from('sales').select('*, sale_items(*)').order('created_at', { ascending: false });
+        const { data, error } = await supabaseClient.from('sales').select('*, sale_items(*)').order('created_at', { ascending: false });
         if (error) return [];
         return data.map(sale => ({
             id: sale.id,
@@ -163,7 +158,7 @@ const DB = {
             created_by: session ? session.user.id : null
         };
 
-        const { data: saleRow, error: saleError } = await supabase.from('sales').insert([salePayload]).select().single();
+        const { data: saleRow, error: saleError } = await supabaseClient.from('sales').insert([salePayload]).select().single();
         if (saleError) return { success: false, message: saleError.message };
 
         // Create Sale Items
@@ -175,7 +170,7 @@ const DB = {
             selling_price: item.sellingPrice
         }));
 
-        await supabase.from('sale_items').insert(itemsPayload);
+        await supabaseClient.from('sale_items').insert(itemsPayload);
 
         // Deduct stock
         for (let item of saleData.items) {
@@ -186,11 +181,11 @@ const DB = {
     },
     deleteSale: async (id) => {
         // Fetch to get items for stock restoration
-        const { data: sale } = await supabase.from('sales').select('*, sale_items(*)').eq('id', id).single();
+        const { data: sale } = await supabaseClient.from('sales').select('*, sale_items(*)').eq('id', id).single();
         if (!sale) return null;
 
         // Delete sale (Cascade deletes items)
-        await supabase.from('sales').delete().eq('id', id);
+        await supabaseClient.from('sales').delete().eq('id', id);
 
         // Restore stock
         for (let item of sale.sale_items) {
@@ -217,27 +212,27 @@ const DB = {
 
     // ---- SUPPLIERS ----
     getSuppliers: async () => {
-        const { data, error } = await supabase.from('suppliers').select('*').order('name');
+        const { data, error } = await supabaseClient.from('suppliers').select('*').order('name');
         return error ? [] : (data || []);
     },
     addSupplier: async (supplier) => {
-        await supabase.from('suppliers').insert([supplier]);
+        await supabaseClient.from('suppliers').insert([supplier]);
     },
     updateSupplier: async (id, updates) => {
-        await supabase.from('suppliers').update(updates).eq('id', id);
+        await supabaseClient.from('suppliers').update(updates).eq('id', id);
     },
     deleteSupplier: async (id) => {
-        await supabase.from('suppliers').delete().eq('id', id);
+        await supabaseClient.from('suppliers').delete().eq('id', id);
     },
 
     // ---- DATA MANAGEMENT ----
     clearData: async () => {
         // Requires admin rights on RLS normally, but assuming admin role can
         if (currentUserProfile && currentUserProfile.role === 'admin') {
-            await supabase.from('sale_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-            await supabase.from('sales').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-            await supabase.from('products').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-            await supabase.from('suppliers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabaseClient.from('sale_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabaseClient.from('sales').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabaseClient.from('products').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabaseClient.from('suppliers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
         } else {
             alert('Only admins can clear data!');
         }
