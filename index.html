@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reddyagency - Streamline your dairy business</title>
+    <link rel="stylesheet" href="styles.css">
+    <meta name="theme-color" content="#121212">
+</head>
+
+<body>
+
+    <aside id="sidebar">
+        <div class="brand">Reddyagency</div>
+        <nav>
+            <ul class="nav-links">
+                <li class="nav-item"><a tabindex="0" class="nav-link active" data-target="dashboard">Dashboard</a></li>
+                <li class="nav-item"><a tabindex="0" class="nav-link" data-target="checkout">Checkout (POS)</a></li>
+                <li class="nav-item"><a tabindex="0" class="nav-link" data-target="products">Products</a></li>
+                <li class="nav-item"><a tabindex="0" class="nav-link" data-target="suppliers">Suppliers</a></li>
+                <li class="nav-item"><a tabindex="0" class="nav-link" data-target="reports">Reports</a></li>
+                <li class="nav-item"><a tabindex="0" class="nav-link" data-target="settings">Settings</a></li>
+            </ul>
+        </nav>
+    </aside>
+
+    <main id="main-content">
+        <header class="header">
+            <h2 id="current-view-title">Dashboard</h2>
+            <div id="header-actions"></div>
+        </header>
+
+        <!-- DASHBOARD VIEW -->
+        <section id="view-dashboard" class="view-container active">
+            <div class="dashboard-grid">
+                <div class="card stat-card">
+                    <h3>Today's Sales</h3>
+                    <div class="value" id="dash-today-sales">₹0.00</div>
+                </div>
+                <div class="card stat-card" id="dash-profit-card">
+                    <h3>Today's Profit</h3>
+                    <div class="value" id="dash-today-profit">₹0.00</div>
+                </div>
+                <div class="card stat-card">
+                    <h3>This Month's Sales</h3>
+                    <div class="value" id="dash-month-sales">₹0.00</div>
+                </div>
+            </div>
+
+            <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="card">
+                    <h3>Low Stock Alerts</h3>
+                    <ul id="dash-low-stock" class="nav-links" style="padding: 0;">
+                        <li class="text-muted">No low stock items.</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>Top Selling Products Today</h3>
+                    <ul id="dash-top-products" class="nav-links" style="padding: 0;">
+                        <li class="text-muted">No sales yet today.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- CHECKOUT VIEW -->
+        <section id="view-checkout" class="view-container">
+            <div class="pos-layout">
+                <!-- Products Grid -->
+                <div>
+                    <div class="form-group">
+                        <input type="text" id="pos-search" placeholder="Search products (Name, category...)">
+                    </div>
+                    <div class="dashboard-grid" id="pos-products-grid"
+                        style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));">
+                        <!-- Products injected here -->
+                    </div>
+                </div>
+                <!-- Cart -->
+                <div class="pos-cart">
+                    <h3 style="padding: 16px; border-bottom: 1px solid var(--border-color);">Current Sale</h3>
+                    <div class="cart-items" id="pos-cart-items">
+                        <div class="text-muted" style="text-align: center; padding: 20px;">Cart is empty</div>
+                    </div>
+                    <div class="cart-totals">
+                        <div class="flex-between" style="margin-bottom: 8px;">
+                            <span>Total Items:</span>
+                            <span id="pos-total-items">0</span>
+                        </div>
+                        <div class="flex-between" style="margin-bottom: 16px; font-size: 1.5rem; font-weight: bold;">
+                            <span>Total:</span>
+                            <span id="pos-total-amount">₹0.00</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Payment Method</label>
+                            <select id="pos-payment-method">
+                                <option value="cash">Cash</option>
+                                <option value="upi">UPI</option>
+                                <option value="card">Card</option>
+                                <option value="credit">Credit</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" style="width: 100%; padding: 16px;" id="btn-complete-sale"
+                            disabled>Complete Sale</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PRODUCTS VIEW -->
+        <section id="view-products" class="view-container">
+            <div class="flex-between" style="margin-bottom: 16px;">
+                <input type="text" id="product-search" placeholder="Search products..." style="max-width: 300px;">
+                <button class="btn btn-primary" id="btn-add-product">Add Product</button>
+            </div>
+            <div class="card table-container">
+                <table id="products-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Price</th>
+                            <th>Stock</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Product rows via JS -->
+                    </tbody>
+                </table>
+                <div id="products-empty" class="text-muted" style="text-align: center; padding: 32px; display: none;">No
+                    products found. Add one to get started.</div>
+            </div>
+        </section>
+
+        <!-- SUPPLIERS VIEW -->
+        <section id="view-suppliers" class="view-container">
+            <div class="flex-between" style="margin-bottom: 16px;">
+                <input type="text" id="supplier-search" placeholder="Search suppliers..." style="max-width: 300px;">
+                <button class="btn btn-primary" id="btn-add-supplier">Add Supplier</button>
+            </div>
+            <div class="card table-container">
+                <table id="suppliers-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Phone</th>
+                            <th>Address</th>
+                            <th>Notes</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Rows via JS -->
+                    </tbody>
+                </table>
+                <div id="suppliers-empty" class="text-muted" style="text-align: center; padding: 32px; display: none;">
+                    No suppliers found.</div>
+            </div>
+        </section>
+
+        <!-- REPORTS VIEW -->
+        <section id="view-reports" class="view-container">
+            <div class="card">
+                <h3>Sales Report Filters</h3>
+                <div class="dashboard-grid">
+                    <div class="form-group">
+                        <label>Date Range</label>
+                        <select id="report-date-range">
+                            <option value="today">Today</option>
+                            <option value="yesterday">Yesterday</option>
+                            <option value="this_week">This Week</option>
+                            <option value="this_month">This Month</option>
+                            <option value="all">All Time</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="card table-container">
+                <table id="reports-table">
+                    <thead>
+                        <tr>
+                            <th>Date/Time</th>
+                            <th>Sale ID</th>
+                            <th>Items</th>
+                            <th>Method</th>
+                            <th>Amount</th>
+                            <th class="profit-col">Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Rows via JS -->
+                    </tbody>
+                    <tfoot style="font-weight: bold; border-top: 2px solid var(--border-color);">
+                        <tr>
+                            <td colspan="4" style="text-align: right;">Totals:</td>
+                            <td id="report-total-amount">₹0.00</td>
+                            <td class="profit-col" id="report-total-profit">₹0.00</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <div id="reports-empty" class="text-muted" style="text-align: center; padding: 32px; display: none;">No
+                    sales found for this period.</div>
+            </div>
+        </section>
+
+        <!-- SETTINGS VIEW -->
+        <section id="view-settings" class="view-container">
+            <div class="card" style="max-width: 600px;">
+                <h3>Store Settings</h3>
+                <br>
+                <form id="settings-form">
+                    <div class="form-group">
+                        <label>Business Name</label>
+                        <input type="text" id="setting-business-name" value="Reddyagency">
+                    </div>
+                    <div class="form-group">
+                        <label>Currency Symbol</label>
+                        <input type="text" id="setting-currency" value="₹">
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="setting-privacy" style="width: auto;">
+                        <label style="margin: 0;">Hide Profit Visibility (Privacy Mode)</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                </form>
+            </div>
+            <div class="card" style="max-width: 600px; border-color: var(--danger);">
+                <h3 style="color: var(--danger);">Data Management</h3>
+                <p class="text-muted" style="margin-bottom: 16px;">Export your data for backup or accounting. Import
+                    data to restore.</p>
+                <div class="flex-gap">
+                    <button class="btn btn-secondary" id="btn-export-data">Export Data</button>
+                    <!-- Fake file input for styling -->
+                    <label class="btn btn-secondary" style="margin: 0; cursor: pointer;">
+                        Import Data
+                        <input type="file" id="input-import-data" accept=".json" style="display: none;">
+                    </label>
+                </div>
+                <hr style="border: none; border-top: 1px solid var(--border-color); margin: 16px 0;">
+                <button class="btn btn-danger" id="btn-clear-data">Reset All Data</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- FLOATING NEW SALE BUTTON -->
+    <button class="fab" id="fab-checkout" aria-label="New Sale">+</button>
+
+    <!-- PRODUCT MODAL -->
+    <div class="modal-overlay" id="modal-product" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-product-title">
+            <div class="modal-header">
+                <h2 id="modal-product-title">Add Product</h2>
+                <button class="close-modal" aria-label="Close modal">&times;</button>
+            </div>
+            <form id="product-form">
+                <input type="hidden" id="prod-id">
+                <div class="form-group">
+                    <label for="prod-name">Name *</label>
+                    <input type="text" id="prod-name" required>
+                </div>
+                <div class="dashboard-grid">
+                    <div class="form-group">
+                        <label for="prod-category">Category</label>
+                        <input type="text" id="prod-category" list="categories-list" required>
+                        <datalist id="categories-list">
+                            <option value="Milk"></option>
+                            <option value="Curd"></option>
+                            <option value="Butter"></option>
+                            <option value="Paneer"></option>
+                        </datalist>
+                    </div>
+                    <div class="form-group">
+                        <label for="prod-unit">Unit *</label>
+                        <select id="prod-unit" required>
+                            <option value="litre">Litre</option>
+                            <option value="ml">ml</option>
+                            <option value="packet">Packet</option>
+                            <option value="piece">Piece</option>
+                            <option value="kg">kg</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="dashboard-grid">
+                    <div class="form-group">
+                        <label for="prod-cost">Cost Price *</label>
+                        <input type="number" id="prod-cost" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="prod-selling">Selling Price *</label>
+                        <input type="number" id="prod-selling" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="dashboard-grid">
+                    <div class="form-group">
+                        <label for="prod-stock">Current Stock *</label>
+                        <input type="number" id="prod-stock" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="prod-threshold">Low Stock Threshold</label>
+                        <input type="number" id="prod-threshold" min="0" value="5">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="prod-supplier">Supplier</label>
+                    <select id="prod-supplier">
+                        <option value="">None</option>
+                        <!-- Injected via JS -->
+                    </select>
+                </div>
+                <div class="flex-between">
+                    <button type="button" class="btn btn-secondary close-modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- SUPPLIER MODAL -->
+    <div class="modal-overlay" id="modal-supplier" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-supplier-title">
+            <div class="modal-header">
+                <h2 id="modal-supplier-title">Add Supplier</h2>
+                <button class="close-modal" aria-label="Close modal">&times;</button>
+            </div>
+            <form id="supplier-form">
+                <input type="hidden" id="sup-id">
+                <div class="form-group">
+                    <label for="sup-name">Name *</label>
+                    <input type="text" id="sup-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="sup-phone">Phone</label>
+                    <input type="text" id="sup-phone">
+                </div>
+                <div class="form-group">
+                    <label for="sup-address">Address</label>
+                    <textarea id="sup-address" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="sup-notes">Notes</label>
+                    <textarea id="sup-notes" rows="2"></textarea>
+                </div>
+                <div class="flex-between">
+                    <button type="button" class="btn btn-secondary close-modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Supplier</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- CONFIRMATION MODAL -->
+    <div class="modal-overlay" id="modal-confirm" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" style="max-width: 400px;">
+            <div class="modal-header">
+                <h2 id="modal-confirm-title">Confirm</h2>
+            </div>
+            <p id="modal-confirm-message" style="margin-bottom: 24px;">Are you sure?</p>
+            <div class="flex-between">
+                <button type="button" class="btn btn-secondary" id="confirm-cancel">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-ok">Yes, proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SNACKBAR / TOAST -->
+    <div id="snackbar">Message</div>
+
+    <script src="utils.js"></script>
+    <script src="storage.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
