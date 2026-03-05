@@ -1,20 +1,97 @@
 /**
- * Core Application Logic for Reddyagency
+ * Core Application Logic for Reddyagency (Supabase Cloud POS Edition)
  */
 
 let posCart = [];
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Show loading or login screen
+    document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-login').classList.add('active');
+
+    // Init Auth
+    await initAuthFlow();
+
     initNavigation();
     initSettings();
     initProductsView();
     initSuppliersView();
     initPOS();
     initModals();
-
-    // Default load
-    renderDashboard();
 });
+
+async function initAuthFlow() {
+    const session = await DB.initAuth();
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value;
+        const pass = document.getElementById('login-password').value;
+        const btn = document.getElementById('btn-login-submit');
+        const err = document.getElementById('login-error');
+
+        btn.textContent = 'Logging in...';
+        btn.disabled = true;
+        err.style.display = 'none';
+
+        const { data, error } = await DB.login(email, pass);
+
+        btn.textContent = 'Login';
+        btn.disabled = false;
+
+        if (error) {
+            err.textContent = error.message;
+            err.style.display = 'block';
+        } else {
+            document.getElementById('login-email').value = '';
+            document.getElementById('login-password').value = '';
+            await DB.initAuth(); // refresh profile
+            startApp();
+        }
+    });
+
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+        await DB.logout();
+        window.location.reload();
+    });
+
+    if (session) {
+        startApp();
+    }
+}
+
+function startApp() {
+    // Hide login
+    document.getElementById('view-login').style.display = 'none';
+
+    const profile = DB.getProfile();
+    // Enforce role-based UI
+    if (profile && profile.role === 'staff') {
+        const settingsNav = Array.from(document.querySelectorAll('.nav-link, .nav-btn')).find(n => n.dataset.target === 'settings');
+        if (settingsNav) settingsNav.style.display = 'none';
+
+        const suppliersNav = Array.from(document.querySelectorAll('.nav-link, .nav-btn')).find(n => n.dataset.target === 'suppliers');
+        if (suppliersNav) suppliersNav.style.display = 'none';
+
+        const qSelect = document.getElementById('quick-nav-select');
+        if (qSelect) {
+            Array.from(qSelect.options).forEach(opt => {
+                if (opt.value === 'settings' || opt.value === 'suppliers') opt.style.display = 'none';
+            })
+        }
+    }
+
+    // Default load depending on hash
+    let initialTarget = 'dashboard';
+    if (window.location.hash) {
+        const hashTarget = window.location.hash.substring(1);
+        if (['dashboard', 'checkout', 'products', 'suppliers', 'reports', 'settings'].includes(hashTarget)) {
+            initialTarget = hashTarget;
+        }
+    }
+    navigateTo(initialTarget, false);
+}
+
 
 // --- NAVIGATION ---
 function initNavigation() {
@@ -53,24 +130,15 @@ function initNavigation() {
             navigateTo('dashboard', false);
         }
     });
-
-    // Setup initial history state based on hash or default
-    let initialTarget = 'dashboard';
-    if (window.location.hash) {
-        const hashTarget = window.location.hash.substring(1);
-        if (['dashboard', 'checkout', 'products', 'suppliers', 'reports', 'settings'].includes(hashTarget)) {
-            initialTarget = hashTarget;
-        }
-    }
-    window.history.replaceState({ target: initialTarget }, initialTarget, `#${initialTarget}`);
-
-    // In case we loaded with a hash, navigate to it once immediately
-    if (initialTarget !== 'dashboard') {
-        navigateTo(initialTarget, false);
-    }
 }
 
-function navigateTo(target, pushToHistory = true) {
+async function navigateTo(target, pushToHistory = true) {
+    // Prevent unathorized route hits
+    const profile = DB.getProfile();
+    if (profile && profile.role === 'staff' && (target === 'settings' || target === 'suppliers')) {
+        target = 'dashboard';
+    }
+
     // Determine title text
     let titleText = target.charAt(0).toUpperCase() + target.slice(1);
     const link = Array.from(document.querySelectorAll('.nav-link')).find(n => n.dataset.target === target);
@@ -89,7 +157,9 @@ function navigateTo(target, pushToHistory = true) {
     if (quickNavSelect) quickNavSelect.value = target;
 
     // Update Views
-    document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.view-container').forEach(v => {
+        if (v.id !== 'view-login') v.classList.remove('active');
+    });
     const view = document.getElementById(`view-${target}`);
     if (view) view.classList.add('active');
 
@@ -118,12 +188,12 @@ function navigateTo(target, pushToHistory = true) {
         window.history.pushState({ target }, titleText, `#${target}`);
     }
 
-    // Trigger specific view renders
-    if (target === 'dashboard') renderDashboard();
-    if (target === 'products') renderProducts();
-    if (target === 'suppliers') renderSuppliers();
-    if (target === 'checkout') renderPOSProducts();
-    if (target === 'reports') renderReports();
+    // Trigger specific async view renders
+    if (target === 'dashboard') await renderDashboard();
+    if (target === 'products') await renderProducts();
+    if (target === 'suppliers') await renderSuppliers();
+    if (target === 'checkout') await renderPOSProducts();
+    if (target === 'reports') await renderReports();
 }
 
 // --- CURRENCY FORMATTER ---
@@ -133,9 +203,9 @@ function formatAmt(num) {
 }
 
 // --- DASHBOARD ---
-function renderDashboard() {
-    const sales = DB.getSales();
-    const products = DB.getProducts();
+async function renderDashboard() {
+    const sales = await DB.getSales();
+    const products = await DB.getProducts();
     const isPrivacyMode = DB.getSettings().privacyMode;
 
     const todayStart = new Date();
@@ -151,9 +221,11 @@ function renderDashboard() {
             todaySales += sale.totalAmount;
             todayProfit += sale.totalProfit;
             // count products
-            sale.items.forEach(item => {
-                productSalesCount[item.productId] = (productSalesCount[item.productId] || 0) + item.quantity;
-            });
+            if (sale.items) {
+                sale.items.forEach(item => {
+                    productSalesCount[item.productId] = (productSalesCount[item.productId] || 0) + item.quantity;
+                });
+            }
         }
         if (d >= monthStart) {
             monthSales += sale.totalAmount;
@@ -194,7 +266,7 @@ function renderDashboard() {
         topContainer.innerHTML = '<li class="text-muted" style="padding: 8px;">No sales yet today.</li>';
     } else {
         sortedTop.forEach(([id, qty]) => {
-            const prod = DB.getProduct(id);
+            const prod = products.find(p => p.id === id);
             if (prod) {
                 topContainer.innerHTML += `
                     <li style="padding: 8px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between;">
@@ -208,17 +280,20 @@ function renderDashboard() {
 
 // --- PRODUCTS ---
 function initProductsView() {
-    document.getElementById('btn-add-product').addEventListener('click', () => {
+    document.getElementById('btn-add-product').addEventListener('click', async () => {
         document.getElementById('product-form').reset();
         document.getElementById('prod-id').value = '';
         document.getElementById('modal-product-title').textContent = 'Add Product';
-        populateSupplierDropdown();
+        await populateSupplierDropdown();
         openModal('modal-product');
     });
 
-    document.getElementById('product-form').addEventListener('submit', (e) => {
+    document.getElementById('product-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('prod-id').value;
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+
         const productData = {
             name: document.getElementById('prod-name').value,
             category: document.getElementById('prod-category').value,
@@ -231,27 +306,28 @@ function initProductsView() {
         };
 
         if (id) {
-            DB.updateProduct(id, productData);
+            await DB.updateProduct(id, productData);
             showToast('Product updated');
         } else {
-            DB.addProduct(productData);
+            await DB.addProduct(productData);
             showToast('Product added');
         }
 
+        submitBtn.disabled = false;
         closeModal('modal-product');
-        renderProducts();
+        await renderProducts();
     });
 
     document.getElementById('product-search').addEventListener('input', renderProducts);
 }
 
-function renderProducts() {
+async function renderProducts() {
     const query = document.getElementById('product-search').value.toLowerCase();
-    const products = DB.getProducts();
+    const products = await DB.getProducts();
     const tbody = document.querySelector('#products-table tbody');
     tbody.innerHTML = '';
 
-    const filtered = products.filter(p => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query));
+    const filtered = products.filter(p => p.name.toLowerCase().includes(query) || (p.category && p.category.toLowerCase().includes(query)));
 
     document.getElementById('products-empty').style.display = filtered.length === 0 ? 'block' : 'none';
 
@@ -273,32 +349,32 @@ function renderProducts() {
     });
 }
 
-function editProduct(id) {
-    const product = DB.getProduct(id);
+window.editProduct = async function (id) {
+    const product = await DB.getProduct(id);
     if (!product) return;
     document.getElementById('prod-id').value = id;
-    document.getElementById('prod-name').value = product.name;
-    document.getElementById('prod-category').value = product.category;
-    document.getElementById('prod-unit').value = product.unit;
-    document.getElementById('prod-cost').value = product.costPrice;
-    document.getElementById('prod-selling').value = product.sellingPrice;
-    document.getElementById('prod-stock').value = product.stockQuantity;
+    document.getElementById('prod-name').value = product.name || '';
+    document.getElementById('prod-category').value = product.category || '';
+    document.getElementById('prod-unit').value = product.unit || '';
+    document.getElementById('prod-cost').value = product.costPrice || '';
+    document.getElementById('prod-selling').value = product.sellingPrice || '';
+    document.getElementById('prod-stock').value = product.stockQuantity || 0;
     document.getElementById('prod-threshold').value = product.lowStockThreshold || 5;
 
-    populateSupplierDropdown();
+    await populateSupplierDropdown();
     document.getElementById('prod-supplier').value = product.supplierId || '';
 
     document.getElementById('modal-product-title').textContent = 'Edit Product';
     openModal('modal-product');
-}
+};
 
-function confirmDeleteProduct(id) {
+window.confirmDeleteProduct = async function (id) {
     if (confirm("Are you sure you want to delete this product?")) {
-        DB.deleteProduct(id);
-        renderProducts();
+        await DB.deleteProduct(id);
+        await renderProducts();
         showToast('Product deleted');
     }
-}
+};
 
 // --- SUPPLIERS ---
 function initSuppliersView() {
@@ -309,9 +385,12 @@ function initSuppliersView() {
         openModal('modal-supplier');
     });
 
-    document.getElementById('supplier-form').addEventListener('submit', (e) => {
+    document.getElementById('supplier-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('sup-id').value;
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.disabled = true;
+
         const data = {
             name: document.getElementById('sup-name').value,
             phone: document.getElementById('sup-phone').value,
@@ -320,22 +399,23 @@ function initSuppliersView() {
         };
 
         if (id) {
-            DB.updateSupplier(id, data);
+            await DB.updateSupplier(id, data);
             showToast('Supplier updated');
         } else {
-            DB.addSupplier(data);
+            await DB.addSupplier(data);
             showToast('Supplier added');
         }
+        btn.disabled = false;
         closeModal('modal-supplier');
-        renderSuppliers();
+        await renderSuppliers();
     });
 
     document.getElementById('supplier-search').addEventListener('input', renderSuppliers);
 }
 
-function renderSuppliers() {
+async function renderSuppliers() {
     const query = document.getElementById('supplier-search').value.toLowerCase();
-    const suppliers = DB.getSuppliers();
+    const suppliers = await DB.getSuppliers();
     const tbody = document.querySelector('#suppliers-table tbody');
     tbody.innerHTML = '';
 
@@ -358,29 +438,30 @@ function renderSuppliers() {
     });
 }
 
-function editSupplier(id) {
-    const supplier = DB.getSuppliers().find(s => s.id === id);
+window.editSupplier = async function (id) {
+    const suppliers = await DB.getSuppliers();
+    const supplier = suppliers.find(s => s.id === id);
     if (!supplier) return;
     document.getElementById('sup-id').value = id;
-    document.getElementById('sup-name').value = supplier.name;
+    document.getElementById('sup-name').value = supplier.name || '';
     document.getElementById('sup-phone').value = supplier.phone || '';
     document.getElementById('sup-address').value = supplier.address || '';
     document.getElementById('sup-notes').value = supplier.notes || '';
     document.getElementById('modal-supplier-title').textContent = 'Edit Supplier';
     openModal('modal-supplier');
-}
+};
 
-function confirmDeleteSupplier(id) {
+window.confirmDeleteSupplier = async function (id) {
     if (confirm("Delete this supplier?")) {
-        DB.deleteSupplier(id);
-        renderSuppliers();
+        await DB.deleteSupplier(id);
+        await renderSuppliers();
         showToast('Supplier deleted');
     }
-}
+};
 
-function populateSupplierDropdown() {
+async function populateSupplierDropdown() {
     const select = document.getElementById('prod-supplier');
-    const sup = DB.getSuppliers();
+    const sup = await DB.getSuppliers();
     select.innerHTML = '<option value="">None</option>';
     sup.forEach(s => {
         const opt = document.createElement('option');
@@ -394,8 +475,11 @@ function populateSupplierDropdown() {
 function initPOS() {
     document.getElementById('pos-search').addEventListener('input', renderPOSProducts);
 
-    document.getElementById('btn-complete-sale').addEventListener('click', () => {
+    document.getElementById('btn-complete-sale').addEventListener('click', async () => {
         if (posCart.length === 0) return;
+        const btn = document.getElementById('btn-complete-sale');
+        btn.disabled = true;
+        btn.textContent = "Processing...";
 
         let totalAmt = 0;
         let totalProfit = 0;
@@ -417,25 +501,31 @@ function initPOS() {
             paymentMethod: document.getElementById('pos-payment-method').value
         };
 
-        const result = DB.addSale(saleData);
+        const result = await DB.addSale(saleData);
         if (result.success) {
             showToast('Sale completed successfully');
             posCart = [];
             renderPOSCart();
-            renderPOSProducts(); // refresh stock visuals
+            await renderPOSProducts();
         } else {
-            alert(result.message); // If stock is insufficient
+            alert(result.message);
         }
+        btn.disabled = false;
+        btn.textContent = "Complete Sale";
     });
 }
 
-function renderPOSProducts() {
+let posCachedProducts = [];
+async function renderPOSProducts() {
+    // Only fetch from network if search is changing rapidly or initial load
+    // For a real POS you might want real-time listeners, but this is sufficient.
+    posCachedProducts = await DB.getProducts();
+
     const query = document.getElementById('pos-search').value.toLowerCase();
-    const products = DB.getProducts();
     const grid = document.getElementById('pos-products-grid');
     grid.innerHTML = '';
 
-    const filtered = products.filter(p => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query));
+    const filtered = posCachedProducts.filter(p => p.name.toLowerCase().includes(query) || (p.category && p.category.toLowerCase().includes(query)));
 
     filtered.forEach(p => {
         const card = document.createElement('div');
@@ -454,7 +544,7 @@ function renderPOSProducts() {
             <div class="text-muted" style="margin-bottom:8px;">${escapeHTML(p.category)}</div>
             <div style="display:flex; justify-content:space-between; align-items:flex-end;">
                 <span style="font-weight:bold; color:var(--brand-accent);">${formatAmt(p.sellingPrice)}</span>
-                <span class="text-muted" style="font-size:12px;">Stock: ${availableStock} ${p.unit}</span>
+                <span class="text-muted" style="font-size:12px;">Stock: ${availableStock} ${escapeHTML(p.unit)}</span>
             </div>
         `;
 
@@ -484,14 +574,15 @@ function addToCart(product) {
         }
     }
     renderPOSCart();
-    renderPOSProducts(); // To update remaining stock display
+    // Simulate stock UI update without DB call
+    renderPOSProductsLocalFilter();
 }
 
-function updateCartQty(productId, delta) {
+window.updateCartQty = function (productId, delta) {
     const itemIndex = posCart.findIndex(c => c.productId === productId);
     if (itemIndex > -1) {
-        const product = DB.getProduct(productId);
-        if (delta > 0 && posCart[itemIndex].quantity >= product.stockQuantity) {
+        const product = posCachedProducts.find(p => p.id === productId);
+        if (delta > 0 && product && posCart[itemIndex].quantity >= product.stockQuantity) {
             return; // Can't add more than stock
         }
         posCart[itemIndex].quantity += delta;
@@ -499,8 +590,43 @@ function updateCartQty(productId, delta) {
             posCart.splice(itemIndex, 1);
         }
         renderPOSCart();
-        renderPOSProducts();
+        renderPOSProductsLocalFilter();
     }
+}
+
+// Optimization: Updates visual grid without fetching DB
+function renderPOSProductsLocalFilter() {
+    const query = document.getElementById('pos-search').value.toLowerCase();
+    const grid = document.getElementById('pos-products-grid');
+    grid.innerHTML = '';
+
+    const filtered = posCachedProducts.filter(p => p.name.toLowerCase().includes(query) || (p.category && p.category.toLowerCase().includes(query)));
+
+    filtered.forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'card stat-card';
+        card.style.cursor = p.stockQuantity > 0 ? 'pointer' : 'not-allowed';
+        card.style.opacity = p.stockQuantity > 0 ? '1' : '0.5';
+        card.style.padding = '12px';
+
+        const cartItem = posCart.find(c => c.productId === p.id);
+        const qtyInCart = cartItem ? cartItem.quantity : 0;
+        const availableStock = p.stockQuantity - qtyInCart;
+
+        card.innerHTML = `
+            <div style="font-size:14px; font-weight:bold; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(p.name)}</div>
+            <div class="text-muted" style="margin-bottom:8px;">${escapeHTML(p.category)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                <span style="font-weight:bold; color:var(--brand-accent);">${formatAmt(p.sellingPrice)}</span>
+                <span class="text-muted" style="font-size:12px;">Stock: ${availableStock} ${escapeHTML(p.unit)}</span>
+            </div>
+        `;
+
+        if (availableStock > 0) {
+            card.onclick = () => addToCart(p);
+        }
+        grid.appendChild(card);
+    });
 }
 
 function renderPOSCart() {
@@ -546,10 +672,10 @@ function renderPOSCart() {
 }
 
 // --- REPORTS ---
-function renderReports() {
+async function renderReports() {
     const range = document.getElementById('report-date-range').value;
     const isPrivacyMode = DB.getSettings().privacyMode;
-    const sales = DB.getSales();
+    const sales = await DB.getSales();
     const tbody = document.querySelector('#reports-table tbody');
     tbody.innerHTML = '';
 
@@ -592,7 +718,7 @@ function renderReports() {
         tr.innerHTML = `
             <td style="font-size:0.875rem;">${formatDate(s.createdAt)}</td>
             <td style="font-family:monospace; font-size:12px;">${s.id.substring(0, 8)}</td>
-            <td>${s.items.reduce((sum, i) => sum + i.quantity, 0)} items</td>
+            <td>${s.items ? s.items.reduce((sum, i) => sum + i.quantity, 0) : 0} items</td>
             <td><span style="text-transform:uppercase; font-size:12px;" class="badge badge-warning" style="background:var(--bg-hover); color:var(--text-primary);">${s.paymentMethod}</span></td>
             <td style="font-weight:bold;">${formatAmt(s.totalAmount)}</td>
             <td class="profit-col" style="${isPrivacyMode ? 'display:none;' : 'color:var(--success);'}">${formatAmt(s.totalProfit)}</td>
@@ -608,14 +734,15 @@ function renderReports() {
     document.getElementById('report-date-range').onchange = renderReports;
 }
 
-function deleteSaleAction(saleId) {
+window.deleteSaleAction = async function (saleId) {
     if (confirm("Are you sure you want to delete this sale? This will restore the stock.")) {
-        const deletedSale = DB.deleteSale(saleId);
+        const deletedSale = await DB.deleteSale(saleId);
         if (deletedSale) {
-            renderReports(); // re-render table
-            showToast('Sale deleted and stock restored.', true, () => {
-                if (DB.undoDeleteSale(deletedSale)) {
-                    renderReports();
+            await renderReports();
+            showToast('Sale deleted and stock restored.', true, async () => {
+                const restored = await DB.undoDeleteSale(deletedSale);
+                if (restored) {
+                    await renderReports();
                     showToast('Sale restored successfully.');
                 } else {
                     showToast('Could not restore sale. Stock was used elsewhere.');
@@ -642,45 +769,31 @@ function initSettings() {
             privacyMode: document.getElementById('setting-privacy').checked
         });
         document.title = document.getElementById('setting-business-name').value;
-        showToast('Settings saved successfully');
+        showToast('Settings saved locally successfully');
     });
 
     // Setup Export
-    document.getElementById('btn-export-data').addEventListener('click', () => {
-        const dataStr = DB.exportData();
+    document.getElementById('btn-export-data').addEventListener('click', async () => {
+        // Because data is in cloud now, we can just export products and sales to CSV
+        const sales = await DB.getSales();
+        const dataStr = JSON.stringify(sales, null, 2);
         const blob = new Blob([dataStr], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `reddyagency_backup_${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `reddyagency_sales_backup_${new Date().toISOString().split('T')[0]}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     });
 
-    // Setup Import
-    document.getElementById('input-import-data').addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            if (DB.importData(event.target.result)) {
-                showToast("Data imported successfully!");
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                alert("Invalid JSON format. Make sure you selected a valid backup file.");
-            }
-        };
-        reader.readAsText(file);
-    });
-
     // Clear Data
-    document.getElementById('btn-clear-data').addEventListener('click', () => {
-        if (confirm("WARNING: This will delete ALL products, sales, and suppliers permanently. Are you absolutely sure?")) {
-            DB.clearData();
-            showToast("All data has been reset.");
-            setTimeout(() => location.reload(), 1000);
+    document.getElementById('btn-clear-data').addEventListener('click', async () => {
+        if (confirm("WARNING: This will delete ALL data from the cloud database permanently. Are you absolutely sure?")) {
+            await DB.clearData();
+            showToast("Data clearing command sent.");
+            setTimeout(() => location.reload(), 1500);
         }
     });
 }
@@ -704,10 +817,10 @@ function initModals() {
     });
 }
 
-function openModal(id) {
+window.openModal = function (id) {
     document.getElementById(id).classList.add('active');
 }
 
-function closeModal(id) {
+window.closeModal = function (id) {
     document.getElementById(id).classList.remove('active');
 }

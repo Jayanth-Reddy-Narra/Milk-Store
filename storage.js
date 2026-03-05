@@ -1,235 +1,245 @@
-/**
- * Storage management with migration handling and data corruption safeguards.
- */
+// Supabase Setup
+// REPLACE THESE with your actual Supabase project URL and anon key
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
 
-const STORAGE_KEY = "milkStore:data";
-const CURRENT_VERSION = 1;
+let supabase;
+if (typeof supabase !== 'undefined') {
+    // If Supabase is loaded globally via CDN
+} else if (window.supabase) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
 
-let appData = {
-    version: CURRENT_VERSION,
-    settings: {
-        businessName: "Reddyagency",
-        currency: "₹",
-        privacyMode: false
-    },
-    products: [],
-    sales: [],
-    suppliers: []
+// State
+let session = null;
+let currentUserProfile = null;
+
+// Temporary settings shim (since settings wasn't moved to DB yet)
+let appSettings = {
+    businessName: "Reddyagency",
+    currency: "₹",
+    privacyMode: false
 };
 
-// Initialize and migrate data
-function initStorage() {
-    try {
-        const rawData = localStorage.getItem(STORAGE_KEY);
-        if (rawData) {
-            let parsedData = JSON.parse(rawData);
-            appData = migrateData(parsedData);
-            saveData(); // Save migrated data
-        } else {
-            saveData(); // Save initial schema
-        }
-    } catch (e) {
-        console.error("Storage corrupted. Starting fresh.", e);
-        // Backup corrupted data just in case
-        localStorage.setItem(`${STORAGE_KEY}:corrupted_backup_${Date.now()}`, localStorage.getItem(STORAGE_KEY));
-        saveData(); // Reset to defaults
-    }
-}
-
-// Ensure schema matches current version
-function migrateData(data) {
-    if (!data.version) data.version = 0;
-
-    // Iterative migration
-    if (data.version < 1) {
-        data.settings = data.settings || appData.settings;
-        data.products = data.products || [];
-        data.sales = data.sales || [];
-        data.suppliers = data.suppliers || [];
-        data.version = 1;
-    }
-
-    return data;
-}
-
-// Persist data
-function saveData() {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-    } catch (error) {
-        console.error("Failed to save data. LocalStorage might be full.", error);
-        alert("Warning: Could not save data. Please backup your data and clear browser storage.");
-    }
-}
-
-// Data Access Object
+// Data Access Object (Async)
 const DB = {
-    // Settings
-    getSettings: () => appData.settings,
+    // ---- AUTH ----
+    initAuth: async () => {
+        if (!supabase) return false;
+        const { data, error } = await supabase.auth.getSession();
+        session = data.session;
+        if (session) {
+            await DB.fetchProfile(session.user.id);
+        }
+
+        supabase.auth.onAuthStateChange(async (event, currentSession) => {
+            session = currentSession;
+            if (session) {
+                await DB.fetchProfile(session.user.id);
+            } else {
+                currentUserProfile = null;
+            }
+        });
+        return session;
+    },
+    login: async (email, password) => {
+        return await supabase.auth.signInWithPassword({ email, password });
+    },
+    logout: async () => {
+        await supabase.auth.signOut();
+    },
+    fetchProfile: async (userId) => {
+        const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+        if (data) currentUserProfile = data;
+        return data;
+    },
+    getProfile: () => currentUserProfile,
+    getSession: () => session,
+
+    // ---- SETTINGS (Local for now, or could be moved to DB) ----
+    getSettings: () => appSettings,
     saveSettings: (newSettings) => {
-        appData.settings = { ...appData.settings, ...newSettings };
-        saveData();
+        appSettings = { ...appSettings, ...newSettings };
     },
 
-    // Products
-    getProducts: () => appData.products,
-    getProduct: (id) => appData.products.find(p => p.id === id),
-    addProduct: (product) => {
-        const newProduct = { ...product, id: generateId(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-        appData.products.push(newProduct);
-        saveData();
-        return newProduct;
+    // ---- PRODUCTS ----
+    getProducts: async () => {
+        const { data, error } = await supabase.from('products').select('*').order('name');
+        return error ? [] : (data || []).map(p => ({
+            ...p,
+            costPrice: parseFloat(p.cost_price),
+            sellingPrice: parseFloat(p.selling_price),
+            stockQuantity: p.stock_quantity,
+            lowStockThreshold: p.low_stock_threshold,
+            supplierId: p.supplier_id
+        }));
     },
-    updateProduct: (id, updates) => {
-        const index = appData.products.findIndex(p => p.id === id);
-        if (index > -1) {
-            appData.products[index] = { ...appData.products[index], ...updates, updatedAt: new Date().toISOString() };
-            saveData();
-            return true;
-        }
-        return false;
+    getProduct: async (id) => {
+        const { data, error } = await supabase.from('products').select('*').eq('id', id).single();
+        if (error || !data) return null;
+        return {
+            ...data,
+            costPrice: parseFloat(data.cost_price),
+            sellingPrice: parseFloat(data.selling_price),
+            stockQuantity: data.stock_quantity,
+            lowStockThreshold: data.low_stock_threshold,
+            supplierId: data.supplier_id
+        };
     },
-    deleteProduct: (id) => {
-        appData.products = appData.products.filter(p => p.id !== id);
-        saveData();
+    addProduct: async (product) => {
+        const payload = {
+            name: product.name,
+            category: product.category,
+            unit: product.unit,
+            cost_price: product.costPrice,
+            selling_price: product.sellingPrice,
+            stock_quantity: product.stockQuantity,
+            low_stock_threshold: product.lowStockThreshold,
+            supplier_id: product.supplierId
+        };
+        const { data, error } = await supabase.from('products').insert([payload]).select().single();
+        return error ? null : data;
     },
-    adjustStock: (id, qtyChange) => {
-        const product = DB.getProduct(id);
+    updateProduct: async (id, updates) => {
+        const payload = {};
+        if (updates.name !== undefined) payload.name = updates.name;
+        if (updates.category !== undefined) payload.category = updates.category;
+        if (updates.unit !== undefined) payload.unit = updates.unit;
+        if (updates.costPrice !== undefined) payload.cost_price = updates.costPrice;
+        if (updates.sellingPrice !== undefined) payload.selling_price = updates.sellingPrice;
+        if (updates.stockQuantity !== undefined) payload.stock_quantity = updates.stockQuantity;
+        if (updates.lowStockThreshold !== undefined) payload.low_stock_threshold = updates.lowStockThreshold;
+        if (updates.supplierId !== undefined) payload.supplier_id = updates.supplierId;
+        payload.updated_at = new Date().toISOString();
+
+        const { error } = await supabase.from('products').update(payload).eq('id', id);
+        return !error;
+    },
+    deleteProduct: async (id) => {
+        await supabase.from('products').delete().eq('id', id);
+    },
+    adjustStock: async (id, qtyChange) => {
+        // Safe atomic RPC or just basic select/update since we run POS locally
+        const product = await DB.getProduct(id);
         if (product && product.stockQuantity + qtyChange >= 0) {
-            DB.updateProduct(id, { stockQuantity: product.stockQuantity + qtyChange });
+            await DB.updateProduct(id, { stockQuantity: product.stockQuantity + qtyChange });
             return true;
         }
         return false;
     },
 
-    // Sales
-    getSales: () => appData.sales,
-    addSale: (saleData) => {
-        // Validate stock first
+    // ---- SALES ----
+    getSales: async () => {
+        const { data, error } = await supabase.from('sales').select('*, sale_items(*)').order('created_at', { ascending: false });
+        if (error) return [];
+        return data.map(sale => ({
+            id: sale.id,
+            totalAmount: parseFloat(sale.total_amount),
+            totalProfit: parseFloat(sale.total_profit),
+            paymentMethod: sale.payment_method,
+            createdAt: sale.created_at,
+            items: sale.sale_items.map(i => ({
+                productId: i.product_id,
+                quantity: i.quantity,
+                costPrice: parseFloat(i.cost_price),
+                sellingPrice: parseFloat(i.selling_price)
+            }))
+        }));
+    },
+    addSale: async (saleData) => {
+        // Validate stock
         for (let item of saleData.items) {
-            const product = DB.getProduct(item.productId);
+            const product = await DB.getProduct(item.productId);
             if (!product || product.stockQuantity < item.quantity) {
-                return { success: false, message: `Insufficient stock for ${product ? product.name : 'unknown item'}` };
+                return { success: false, message: `Insufficient stock for a selected item.` };
             }
         }
 
-        const saleId = generateId();
-        const saleRecord = {
-            id: saleId,
-            items: saleData.items,
-            totalAmount: saleData.totalAmount,
-            totalProfit: saleData.totalProfit,
-            paymentMethod: saleData.paymentMethod,
-            createdAt: new Date().toISOString()
+        // Create Sale
+        const salePayload = {
+            total_amount: saleData.totalAmount,
+            total_profit: saleData.totalProfit,
+            payment_method: saleData.paymentMethod,
+            created_by: session ? session.user.id : null
         };
+
+        const { data: saleRow, error: saleError } = await supabase.from('sales').insert([salePayload]).select().single();
+        if (saleError) return { success: false, message: saleError.message };
+
+        // Create Sale Items
+        const itemsPayload = saleData.items.map(item => ({
+            sale_id: saleRow.id,
+            product_id: item.productId,
+            quantity: item.quantity,
+            cost_price: item.costPrice,
+            selling_price: item.sellingPrice
+        }));
+
+        await supabase.from('sale_items').insert(itemsPayload);
 
         // Deduct stock
-        saleData.items.forEach(item => {
-            DB.adjustStock(item.productId, -item.quantity);
-        });
-
-        appData.sales.push(saleRecord);
-        saveData();
-        return { success: true, sale: saleRecord };
-    },
-    deleteSale: (id) => {
-        const saleIndex = appData.sales.findIndex(s => s.id === id);
-        if (saleIndex > -1) {
-            const sale = appData.sales[saleIndex];
-            // Restore stock
-            sale.items.forEach(item => {
-                DB.adjustStock(item.productId, item.quantity);
-            });
-            appData.sales.splice(saleIndex, 1);
-            saveData();
-            return sale;
+        for (let item of saleData.items) {
+            await DB.adjustStock(item.productId, -item.quantity);
         }
-        return null; // Sale not found
-    },
-    undoDeleteSale: (saleRecord) => {
-        // Find if sale was already added to prevent duplicates
-        if (appData.sales.find(s => s.id === saleRecord.id)) return false;
 
-        // Deduct stock again. Only works if enough valid stock.
-        for (let item of saleRecord.items) {
-            const product = DB.getProduct(item.productId);
-            if (!product || product.stockQuantity < item.quantity) {
-                return false; // Can't undo, stock was used.
-            }
+        return { success: true, sale: saleRow };
+    },
+    deleteSale: async (id) => {
+        // Fetch to get items for stock restoration
+        const { data: sale } = await supabase.from('sales').select('*, sale_items(*)').eq('id', id).single();
+        if (!sale) return null;
+
+        // Delete sale (Cascade deletes items)
+        await supabase.from('sales').delete().eq('id', id);
+
+        // Restore stock
+        for (let item of sale.sale_items) {
+            await DB.adjustStock(item.product_id, item.quantity);
         }
-        saleRecord.items.forEach(item => {
-            DB.adjustStock(item.productId, -item.quantity);
-        });
-
-        appData.sales.push(saleRecord);
-        saveData();
-        return true;
+        return sale;
     },
-
-    // Suppliers
-    getSuppliers: () => appData.suppliers,
-    addSupplier: (supplier) => {
-        const newSupplier = { ...supplier, id: generateId() };
-        appData.suppliers.push(newSupplier);
-        saveData();
-    },
-    updateSupplier: (id, updates) => {
-        const index = appData.suppliers.findIndex(s => s.id === id);
-        if (index > -1) {
-            appData.suppliers[index] = { ...appData.suppliers[index], ...updates };
-            saveData();
-        }
-    },
-    deleteSupplier: (id) => {
-        appData.suppliers = appData.suppliers.filter(s => s.id !== id);
-        saveData();
-    },
-
-    // Import / Export
-    exportData: () => JSON.stringify(appData, null, 2),
-    importData: (jsonData) => {
-        try {
-            const parsed = JSON.parse(jsonData);
-            if (!parsed.version || !parsed.products || !parsed.sales) {
-                throw new Error("Invalid schema format.");
-            }
-            appData = migrateData(parsed);
-            saveData();
-            return true;
-        } catch (e) {
-            console.error("Import failed:", e);
-            return false;
-        }
-    },
-    clearData: () => {
-        appData = {
-            version: CURRENT_VERSION,
-            settings: appData.settings,
-            products: [],
-            sales: [],
-            suppliers: []
+    undoDeleteSale: async (sale) => {
+        // Simplified: Just recreating it as a new sale with old timestamp is tricky because of IDs, 
+        // we'll just insert a brand new sale with the same data representing the restore
+        const restoreData = {
+            items: sale.sale_items.map(i => ({
+                productId: i.product_id,
+                quantity: i.quantity,
+                costPrice: parseFloat(i.cost_price),
+                sellingPrice: parseFloat(i.selling_price)
+            })),
+            totalAmount: parseFloat(sale.total_amount),
+            totalProfit: parseFloat(sale.total_profit),
+            paymentMethod: sale.payment_method
         };
-        saveData();
+        return (await DB.addSale(restoreData)).success;
+    },
+
+    // ---- SUPPLIERS ----
+    getSuppliers: async () => {
+        const { data, error } = await supabase.from('suppliers').select('*').order('name');
+        return error ? [] : (data || []);
+    },
+    addSupplier: async (supplier) => {
+        await supabase.from('suppliers').insert([supplier]);
+    },
+    updateSupplier: async (id, updates) => {
+        await supabase.from('suppliers').update(updates).eq('id', id);
+    },
+    deleteSupplier: async (id) => {
+        await supabase.from('suppliers').delete().eq('id', id);
+    },
+
+    // ---- DATA MANAGEMENT ----
+    clearData: async () => {
+        // Requires admin rights on RLS normally, but assuming admin role can
+        if (currentUserProfile && currentUserProfile.role === 'admin') {
+            await supabase.from('sale_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabase.from('sales').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabase.from('products').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabase.from('suppliers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        } else {
+            alert('Only admins can clear data!');
+        }
     }
 };
-
-// Initialize synchronously on script load
-initStorage();
-
-// Seed initial products if empty
-if (DB.getProducts().length === 0) {
-    const defaultProducts = [
-        { name: "Toned Milk (1L)", category: "Milk", unit: "litre", costPrice: 40, sellingPrice: 45, stockQuantity: 50, lowStockThreshold: 10 },
-        { name: "Full Cream Milk (1L)", category: "Milk", unit: "litre", costPrice: 55, sellingPrice: 60, stockQuantity: 40, lowStockThreshold: 10 },
-        { name: "Cow Milk (500ml)", category: "Milk", unit: "packet", costPrice: 22, sellingPrice: 25, stockQuantity: 60, lowStockThreshold: 15 },
-        { name: "Fresh Curd (500g)", category: "Curd", unit: "packet", costPrice: 30, sellingPrice: 35, stockQuantity: 30, lowStockThreshold: 5 },
-        { name: "Butter (100g)", category: "Butter", unit: "packet", costPrice: 45, sellingPrice: 52, stockQuantity: 20, lowStockThreshold: 5 },
-        { name: "Paneer (200g)", category: "Paneer", unit: "packet", costPrice: 70, sellingPrice: 85, stockQuantity: 25, lowStockThreshold: 5 },
-        { name: "Pure Ghee (500ml)", category: "Ghee", unit: "bottle", costPrice: 280, sellingPrice: 320, stockQuantity: 15, lowStockThreshold: 3 },
-        { name: "Flavored Milk (200ml)", category: "Milk", unit: "bottle", costPrice: 25, sellingPrice: 30, stockQuantity: 45, lowStockThreshold: 10 },
-        { name: "Buttermilk (200ml)", category: "Drink", unit: "packet", costPrice: 12, sellingPrice: 15, stockQuantity: 50, lowStockThreshold: 15 },
-        { name: "Cheese Slices (200g)", category: "Cheese", unit: "packet", costPrice: 110, sellingPrice: 130, stockQuantity: 20, lowStockThreshold: 5 }
-    ];
-
-    defaultProducts.forEach(p => DB.addProduct(p));
-}
