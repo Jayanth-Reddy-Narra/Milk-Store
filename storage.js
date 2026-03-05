@@ -1,7 +1,7 @@
 // Supabase Setup
 // REPLACE THESE with your actual Supabase project URL and anon key
 const SUPABASE_URL = "https://jrvyzzikpfaohjkypvmz.supabase.co";
-const SUPABASE_ANON_KEY = "Narras6-288/3/c";
+const SUPABASE_ANON_KEY = "sb_publishable_I9NalIe1-cp_-G_ZszMhLg_AO66KUwI";
 
 let supabase;
 if (typeof supabase !== 'undefined') {
